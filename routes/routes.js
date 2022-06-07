@@ -1,7 +1,7 @@
 
 const express = require('express');
+const bcrypt = require('bcrypt');
 const User = require('../model/users');
-
 const router = express.Router();
 
 // middleware to test if authenticated
@@ -25,7 +25,14 @@ router.post('/login', async function(req, res) {
     if(!user) {
         return res.status(401).send("Invalid Username!");
     }
-    if(user.password != password) {
+    var match = false;
+    try {
+        match = await bcrypt.compare(password, user.password);
+    }
+    catch (error) {
+        return res.status(500).json({error: error.message});
+    }
+    if(!match) {
         return res.status(401).send("Invalid Password!");
     }
     req.session.user = username;
@@ -46,12 +53,17 @@ router.get('/getUsers', isAuthenticated, async (req, res) => {
 //POST /create
 router.post('/create', async (req, res) => {
 
-    const user = new User({
-        username: req.body.username,
-        password: req.body.password
-    });
+    if(!req.body.username || !req.body.password) {
+        return res.status(400).send("Invalid Request!");
+    }
 
     try {
+        const salt = await bcrypt.genSalt(10);
+        const hash = await bcrypt.hash(req.body.password, salt);
+        const user = new User({
+            username: req.body.username,
+            password: hash
+        });
         const result = await user.save();
         res.status(201).json(result);
     }
@@ -90,7 +102,9 @@ router.put('/resetPass', async function(req, res) {
             if(!user) {
                 return res.status(400).send(`Logged-in user (${username}) no longer exists in DB!`);
             }
-            user.password = newPass;
+            const salt = await bcrypt.genSalt(10);
+            const hash = await bcrypt.hash(newPass, salt);
+            user.password = hash;
             const result = await user.save();
             return res.status(200).json(result);
         }
@@ -108,10 +122,12 @@ router.put('/resetPass', async function(req, res) {
         if(!user) {
             return res.status(401).send("Invalid Username!");
         }
-        if(user.password != password) {
+        if(!bcrypt.compare(password, user.password)) {
             return res.status(401).send("Invalid Password!");
         }
-        user.password = newPass;
+        const salt = await bcrypt.genSalt(10);
+        const hash = await bcrypt.hash(newPass, salt);
+        user.password = hash;
         const result = await user.save();
         return res.status(200).json(result);
     }
